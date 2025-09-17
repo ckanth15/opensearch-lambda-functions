@@ -123,7 +123,6 @@ Resources:
       Environment:
         Variables:
           OPENSEARCH_ENDPOINT: !Ref OpenSearchDomainEndpoint
-          AWS_REGION: !Ref AWS::Region
 
   # API Gateway
   SearchAPI:
@@ -151,7 +150,6 @@ Resources:
       Environment:
         Variables:
           OPENSEARCH_ENDPOINT: !Ref OpenSearchDomainEndpoint
-          AWS_REGION: !Ref AWS::Region
       Events:
         ApiEvent:
           Type: HttpApi
@@ -173,7 +171,7 @@ Resources:
       Environment:
         Variables:
           OPENSEARCH_ENDPOINT: !Ref OpenSearchDomainEndpoint
-          AWS_REGION: !Ref AWS::Region
+
       Events:
         ApiEvent:
           Type: HttpApi
