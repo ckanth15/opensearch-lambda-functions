@@ -1,3 +1,4 @@
+cat > buildspec.yml << 'EOF'
 version: 0.2
 phases:
   install:
@@ -5,10 +6,18 @@ phases:
       python: 3.10
   build:
     commands:
-      - aws cloudformation package --template-file search-gateway.yaml --s3-bucket artifacts-bucket-gl --output-template-file gateway.yaml
-
+      # Install Python dependencies
+      - pip install -r requirements.txt -t .
+      # Package the CloudFormation template
+      - aws cloudformation package --template-file search-function.yaml --s3-bucket artifacts-bucket-gl --output-template-file packaged-template.yaml
 artifacts:
   type: zip
   files:
-    - search-gateway.yaml
-    - gateway.yaml
+    - search-function.yaml
+    - packaged-template.yaml
+    - lambda_function.py
+    - requirements.txt
+    - urllib3/**
+    - requests/**
+    - requests_aws4auth/**
+EOF
