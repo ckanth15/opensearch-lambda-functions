@@ -1,0 +1,41 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+    commands:
+      - echo Installing dependencies
+      - pip install --upgrade pip
+      - pip install boto3
+      - pip install aws-sam-cli
+
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws --version
+      - echo Build started on `date`
+      - echo Validating SAM template...
+      - sam validate --template-file template.yaml
+
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building SAM application...
+      - sam build --template-file template.yaml
+
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Packaging SAM application...
+      - sam package --template-file .aws-sam/build/template.yaml --s3-bucket $ARTIFACTS_BUCKET --output-template-file packaged-template.yaml
+
+artifacts:
+  files:
+    - packaged-template.yaml
+    - template.yaml
+  name: opensearch-lambda-functions
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'

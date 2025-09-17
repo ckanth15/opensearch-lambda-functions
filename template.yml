@@ -1,0 +1,340 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: OpenSearch Lambda Functions for Document Search
+
+Parameters:
+  OpenSearchDomainEndpoint:
+    Type: String
+    Default: search-kclite-public-alh7skio4hadvkur54ycdv2ily.us-east-1.es.amazonaws.com
+    Description: OpenSearch domain endpoint
+  
+  DocumentStoreBucket:
+    Type: String
+    Default: opensearch-document-store-bucket
+    Description: S3 bucket for storing PDF documents
+    
+  IntermediaryStorageBucket:
+    Type: String
+    Default: opensearch-intermediary-storage-bucket
+    Description: S3 bucket for storing processed text files
+
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 512
+    Runtime: python3.9
+
+Resources:
+  # S3 Buckets
+  DocumentStoreBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${DocumentStoreBucket}-${AWS::AccountId}"
+
+  # EC2 Instance for PDF Upload
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EC2 instance
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Sub "${DocumentStoreBucket}/*"
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0c02fb55956c7d316  # Amazon Linux 2 AMI (update as needed)
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y aws-cli
+          
+  # S3 Event Notifications (separate from bucket creation)
+  DocumentStoreBucketNotification:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref DocumentStoreBucket
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt PDFtoTXTFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .pdf
+    DependsOn:
+      - PDFtoTXTFunction
+      - PDFtoTXTInvokePermission
+
+  IntermediaryBucketNotification:
+    Type: AWS::S3::Bucket  
+    Properties:
+      BucketName: !Ref IntermediaryStorageBucket
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt UploadToSearchFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .txt
+    DependsOn:
+      - UploadToSearchFunction
+      - UploadToSearchInvokePermission
+
+  # Lambda Layers
+  PyPDFLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: pypdf-layer
+      Description: PyPDF library for PDF processing
+      ContentUri: layers/pypdf/
+      CompatibleRuntimes:
+        - python3.9
+      RetentionPolicy: Delete
+
+  AWSAuthLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: aws-auth-layer
+      Description: AWS authentication library
+      ContentUri: layers/aws_auth/
+      CompatibleRuntimes:
+        - python3.9
+      RetentionPolicy: Delete
+
+  # Lambda Execution Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: OpenSearchAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - es:ESHttpPost
+                  - es:ESHttpPut
+                  - es:ESHttpGet
+                  - es:ESHttpDelete
+                  - es:ESHttpHead
+                Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/kclite-public/*"
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub "${DocumentStoreBucket}/*"
+                  - !Sub "${IntermediaryStorageBucket}/*"
+
+  # Lambda Function 1: PDFtoTXT
+  PDFtoTXTFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: pdftotxt
+      CodeUri: PDFtoTXT/PDFtoTXT/
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref PyPDFLayer
+      Environment:
+        Variables:
+          TARGET_BUCKET: !Sub "${IntermediaryStorageBucket}-${AWS::AccountId}"
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref DocumentStoreBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .pdf
+
+  # S3 Invoke Permission for PDFtoTXT
+  PDFtoTXTInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PDFtoTXTFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub "${DocumentStoreBucket}/*"
+
+  # Lambda Function 2: Upload to Search
+  UploadToSearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: upload-tosearch
+      CodeUri: Upload_to_search/Upload to search/
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref AWSAuthLayer
+      Environment:
+        Variables:
+          OPENSEARCH_ENDPOINT: !Ref OpenSearchDomainEndpoint
+          AWS_REGION: !Ref AWS::Region
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref IntermediaryStorageBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .txt
+
+  # S3 Invoke Permission for UploadToSearch
+  UploadToSearchInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UploadToSearchFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub "${IntermediaryStorageBucket}/*"
+
+  # API Gateway
+  SearchAPI:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowHeaders:
+          - "*"
+        AllowMethods:
+          - "*"
+
+  # Lambda Function 3: Search Gateway
+  SearchGatewayFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: search-gateway
+      CodeUri: Search_Gateway/Search Gateway/
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref AWSAuthLayer
+      Environment:
+        Variables:
+          OPENSEARCH_ENDPOINT: !Ref OpenSearchDomainEndpoint
+          AWS_REGION: !Ref AWS::Region
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref SearchAPI
+            Method: any
+            Path: /
+
+  # Lambda Function 4: Search Function
+  SearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: search-function
+      CodeUri: Search_Function/Search Function/
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref AWSAuthLayer
+      Environment:
+        Variables:
+          OPENSEARCH_ENDPOINT: !Ref OpenSearchDomainEndpoint
+          AWS_REGION: !Ref AWS::Region
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref SearchAPI
+            Method: any
+            Path: /search
+
+Outputs:
+  DocumentStoreBucketName:
+    Description: Name of the document store S3 bucket
+    Value: !Ref DocumentStoreBucket
+    
+  IntermediaryStorageBucketName:
+    Description: Name of the intermediary storage S3 bucket  
+    Value: !Ref IntermediaryStorageBucket
+    
+  APIGatewayEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${SearchAPI}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    
+  OpenSearchDomain:
+    Description: OpenSearch domain endpoint
+    Value: !Ref OpenSearchDomainEndpoint
+    
+  EC2InstanceId:
+    Description: EC2 Instance ID for PDF uploads
+    Value: !Ref EC2Instance
+    
+  EC2PublicIP:
+    Description: EC2 Public IP Address
+    Value: !GetAtt EC2Instance.PublicIp
