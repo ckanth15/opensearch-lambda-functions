@@ -25,106 +25,16 @@ Globals:
     Runtime: python3.9
 
 Resources:
-  # S3 Buckets
+  # S3 Buckets - Simple buckets without event notifications
   DocumentStoreBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "${DocumentStoreBucket}-${AWS::AccountId}"
 
-  # EC2 Instance for PDF Upload
-  EC2SecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for EC2 instance
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
-
-  EC2Role:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: S3Access
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:PutObjectAcl
-                Resource: !Sub "${DocumentStoreBucket}/*"
-
-  EC2InstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Roles:
-        - !Ref EC2Role
-
-  EC2Instance:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: ami-0c02fb55956c7d316  # Amazon Linux 2 AMI (update as needed)
-      InstanceType: t2.micro
-      SecurityGroupIds:
-        - !Ref EC2SecurityGroup
-      IamInstanceProfile: !Ref EC2InstanceProfile
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum update -y
-          yum install -y aws-cli
-          
-  # S3 Event Notifications - Configure after Lambda functions are created
-  DocumentStoreBucketNotification:
+  IntermediaryStorageBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${DocumentStoreBucket}-${AWS::AccountId}-docs"
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt PDFtoTXTFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .pdf
-    DependsOn:
-      - PDFtoTXTFunction
-      - PDFtoTXTInvokePermission
-
-  IntermediaryBucketNotification:
-    Type: AWS::S3::Bucket  
-    Properties:
-      BucketName: !Sub "${IntermediaryStorageBucket}-${AWS::AccountId}-inter"
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt UploadToSearchFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .txt
-    DependsOn:
-      - UploadToSearchFunction
-      - UploadToSearchInvokePermission
+      BucketName: !Sub "${IntermediaryStorageBucket}-${AWS::AccountId}"
 
   # Lambda Layers
   PyPDFLayer:
@@ -186,7 +96,7 @@ Resources:
                   - !Sub "${DocumentStoreBucket}/*"
                   - !Sub "${IntermediaryStorageBucket}/*"
 
-  # Lambda Function 1: PDFtoTXT
+  # Lambda Function 1: PDFtoTXT - NO S3 EVENTS
   PDFtoTXTFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -200,17 +110,7 @@ Resources:
         Variables:
           TARGET_BUCKET: !Sub "${IntermediaryStorageBucket}-${AWS::AccountId}"
 
-  # S3 Invoke Permission for PDFtoTXT
-  PDFtoTXTInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref PDFtoTXTFunction
-      Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceAccount: !Ref AWS::AccountId
-      SourceArn: !Sub "${DocumentStoreBucket}/*"
-
-  # Lambda Function 2: Upload to Search
+  # Lambda Function 2: Upload to Search - NO S3 EVENTS
   UploadToSearchFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -224,16 +124,6 @@ Resources:
         Variables:
           OPENSEARCH_ENDPOINT: !Ref OpenSearchDomainEndpoint
           AWS_REGION: !Ref AWS::Region
-
-  # S3 Invoke Permission for UploadToSearch
-  UploadToSearchInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref UploadToSearchFunction
-      Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceAccount: !Ref AWS::AccountId
-      SourceArn: !Sub "${IntermediaryStorageBucket}/*"
 
   # API Gateway
   SearchAPI:
@@ -308,11 +198,3 @@ Outputs:
   OpenSearchDomain:
     Description: OpenSearch domain endpoint
     Value: !Ref OpenSearchDomainEndpoint
-    
-  EC2InstanceId:
-    Description: EC2 Instance ID for PDF uploads
-    Value: !Ref EC2Instance
-    
-  EC2PublicIP:
-    Description: EC2 Public IP Address
-    Value: !GetAtt EC2Instance.PublicIp
