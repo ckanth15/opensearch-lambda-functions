@@ -93,8 +93,8 @@ Resources:
                   - s3:PutObject
                   - s3:DeleteObject
                 Resource:
-                  - !Sub "${DocumentStoreBucket}/*"
-                  - !Sub "${IntermediaryStorageBucket}/*"
+                  - !Sub "arn:aws:s3:::${DocumentStoreBucketName}-${AWS::AccountId}/*
+                  - !Sub "arn:aws:s3:::${IntermediaryStorageBucketName}-${AWS::AccountId}/*"
 
   # Lambda Function 1: PDFtoTXT - NO S3 EVENTS
   PDFtoTXTFunction:
