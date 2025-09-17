@@ -91,11 +91,11 @@ Resources:
           yum update -y
           yum install -y aws-cli
           
-  # S3 Event Notifications (separate from bucket creation)
+  # S3 Event Notifications - Configure after Lambda functions are created
   DocumentStoreBucketNotification:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Ref DocumentStoreBucket
+      BucketName: !Sub "${DocumentStoreBucket}-${AWS::AccountId}-docs"
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: s3:ObjectCreated:*
@@ -112,7 +112,7 @@ Resources:
   IntermediaryBucketNotification:
     Type: AWS::S3::Bucket  
     Properties:
-      BucketName: !Ref IntermediaryStorageBucket
+      BucketName: !Sub "${IntermediaryStorageBucket}-${AWS::AccountId}-inter"
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: s3:ObjectCreated:*
@@ -199,17 +199,6 @@ Resources:
       Environment:
         Variables:
           TARGET_BUCKET: !Sub "${IntermediaryStorageBucket}-${AWS::AccountId}"
-      Events:
-        S3Event:
-          Type: S3
-          Properties:
-            Bucket: !Ref DocumentStoreBucket
-            Events: s3:ObjectCreated:*
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .pdf
 
   # S3 Invoke Permission for PDFtoTXT
   PDFtoTXTInvokePermission:
@@ -235,17 +224,6 @@ Resources:
         Variables:
           OPENSEARCH_ENDPOINT: !Ref OpenSearchDomainEndpoint
           AWS_REGION: !Ref AWS::Region
-      Events:
-        S3Event:
-          Type: S3
-          Properties:
-            Bucket: !Ref IntermediaryStorageBucket
-            Events: s3:ObjectCreated:*
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .txt
 
   # S3 Invoke Permission for UploadToSearch
   UploadToSearchInvokePermission:
