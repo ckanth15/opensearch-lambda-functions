@@ -8,12 +8,12 @@ Parameters:
     Default: search-kclite-public-alh7skio4hadvkur54ycdv2ily.us-east-1.es.amazonaws.com
     Description: OpenSearch domain endpoint
   
-  DocumentStoreBucket:
+  DocumentStoreBucketName:
     Type: String
     Default: opensearch-document-store-bucket
     Description: S3 bucket for storing PDF documents
     
-  IntermediaryStorageBucket:
+  IntermediaryStorageBucketName:
     Type: String
     Default: opensearch-intermediary-storage-bucket
     Description: S3 bucket for storing processed text files
@@ -29,12 +29,12 @@ Resources:
   DocumentStoreBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${DocumentStoreBucket}-${AWS::AccountId}"
+      BucketName: !Sub "${DocumentStoreBucketName}-${AWS::AccountId}"
 
   IntermediaryStorageBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${IntermediaryStorageBucket}-${AWS::AccountId}"
+      BucketName: !Sub "${IntermediaryStorageBucketName}-${AWS::AccountId}"
 
   # Lambda Layers
   PyPDFLayer:
@@ -108,7 +108,7 @@ Resources:
         - !Ref PyPDFLayer
       Environment:
         Variables:
-          TARGET_BUCKET: !Sub "${IntermediaryStorageBucket}-${AWS::AccountId}"
+          TARGET_BUCKET: !Sub "${IntermediaryStorageBucketName}-${AWS::AccountId}"
 
   # Lambda Function 2: Upload to Search - NO S3 EVENTS
   UploadToSearchFunction:
