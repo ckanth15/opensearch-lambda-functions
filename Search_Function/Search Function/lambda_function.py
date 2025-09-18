@@ -87,7 +87,7 @@ def lambda_handler(event, context):
                 "query": {
                     "multi_match": {
                         "query": search_term,
-                        "fields": ["Title", "Author", "Date", "Body"]
+                        "fields": ["Title", "Author", "Body"]
                     }
                 },
                 "fields": ["Title", "Author", "Date", "Summary"]
