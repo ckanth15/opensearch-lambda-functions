@@ -12,7 +12,8 @@ awsauth = AWS4Auth(credentials.access_key, credentials.secret_key, region, servi
 print("Credentials access key:", credentials.access_key)
 print("Credentials secret key:", credentials.secret_key)
 
-host = 'https://search-kclite-public-alh7skio4hadvkur54ycdv2liy.us-east-1.es.amazonaws.com'
+host = 'https://search-kclite-public-alh7skio4hadvkur54ycdv2ily.us-east-1.es.amazonaws.com'
+
 index = 'mygoogle'
 datatype = '_doc'
 #url = host + '/' + index + '/' + datatype
