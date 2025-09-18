@@ -3,21 +3,15 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      python: 3.10
+      python: 3.9
   build:
     commands:
-      # Install Python dependencies
+      # Install Python dependencies in the current directory
       - pip install -r requirements.txt -t .
-      # Package the CloudFormation template
+      # Package everything including dependencies
       - aws cloudformation package --template-file search-function.yaml --s3-bucket artifacts-bucket-gl --output-template-file packaged-template.yaml
 artifacts:
-  type: zip
   files:
-    - search-function.yaml
     - packaged-template.yaml
-    - lambda_function.py
-    - requirements.txt
-    - urllib3/**
-    - requests/**
-    - requests_aws4auth/**
+    - '**/*'
 EOF
