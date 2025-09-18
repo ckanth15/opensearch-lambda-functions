@@ -44,11 +44,19 @@ def handler(event, context):
         
         cust_id= key
         url = host + '/' + index + '/' + datatype + '/' + cust_id
-        title = lines[0]
+        
+        # Decode and process title
+        title = lines[0].decode('utf-8') if lines[0] else "Untitled"
         print("Key:", key)
         
-        author = lines[1]
-        date = lines[2]
+        # Handle author with proper decoding and fallback
+        author_raw = lines[1].decode('utf-8') if len(lines) > 1 else "Unknown"
+        author = "Unknown" if author_raw == "None" else author_raw
+        
+        # Handle date with proper decoding and fallback
+        date_raw = lines[2].decode('utf-8') if len(lines) > 2 else "2023-01-01"
+        date = "2023-01-01" if date_raw == "None" else date_raw
+        
         #print("Lines is ", body.split())
         final_body=lines[3:]
         size= len(final_body)
@@ -65,11 +73,15 @@ def handler(event, context):
         print("Summary",summary)
         print("Type of final_body:", type(final_body))
         print("Type of body in string: ",type(listToString(final_body)))
-        document = { "Title": title,"Author": author, "Date": date, "Body": listToString(final_body),"Summary": summary }
+        
+        # Create document with properly formatted fields
+        document = { 
+            "Title": title,
+            "Author": author, 
+            "Date": date, 
+            "Body": listToString(final_body),
+            "Summary": listToString(summary) if summary else ""
+        }
         #print("Document:",document)
         r = requests.post(url, auth=awsauth, json=document, headers=headers)
         print("Response:", r.text)
-        
-        
-
-        
