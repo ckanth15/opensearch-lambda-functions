@@ -1,0 +1,10 @@
+*.zip
+urllib3/
+requests/
+certifi/
+charset_normalizer/
+idna/
+six.py
+*dist-info/
+__pycache__/
+../../.DS_Store
