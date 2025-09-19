@@ -21,3 +21,8 @@
 # Temporary files
 **/.qodo/
 **/bin/
+
+# Backup Files
+*.bkp
+*.backup
+**/**/*.bkp
